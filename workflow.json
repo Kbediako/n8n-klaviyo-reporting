@@ -1,0 +1,342 @@
+{
+  "name": "Klaviyo Automated Reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 9,
+              "minute": 0,
+              "weekDay": 1
+            }
+          ]
+        }
+      },
+      "id": "6a290b91-7fad-41a7-b7a0-0c8a37b3223a",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate date range for the report\n// Default to last week if not specified\nconst now = new Date();\nconst oneWeekAgo = new Date(now);\noneWeekAgo.setDate(now.getDate() - 7);\n\n// Format dates for Klaviyo API (Unix timestamp)\nconst since = Math.floor(oneWeekAgo.getTime() / 1000);\nconst until = Math.floor(now.getTime() / 1000);\n\n// Add formatted dates for display in report\nconst formatDate = (date) => {\n  return date.toISOString().split('T')[0];\n};\n\nreturn [\n  {\n    since: since,\n    until: until,\n    formattedStartDate: formatDate(oneWeekAgo),\n    formattedEndDate: formatDate(now),\n    reportTitle: `Klaviyo Report: ${formatDate(oneWeekAgo)} to ${formatDate(now)}`\n  }\n];"
+      },
+      "id": "6b95c7e2-c9ae-4e7c-bda7-49ed165fb06c",
+      "name": "Set Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://a.klaviyo.com/api/v1/campaigns",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.klaviyoApi.api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f5a56de3-56e5-4bc4-920a-44c8c7ab7e81",
+      "name": "Fetch Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        680,
+        200
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "klaviyoApi",
+          "name": "Klaviyo API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://a.klaviyo.com/api/v1/metrics/timeline",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.klaviyoApi.api_key }}"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "count",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "returnAllOnEmpty": true
+        }
+      },
+      "id": "5d7e8953-17d3-4ef7-a903-b3c6ab4f7c91",
+      "name": "Fetch Metrics (Opens)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "klaviyoApi",
+          "name": "Klaviyo API"
+        }
+      },
+      "notes": "Replace with your specific metric_id for opens"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://a.klaviyo.com/api/v1/metrics/timeline",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.klaviyoApi.api_key }}"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "count",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "returnAllOnEmpty": true
+        }
+      },
+      "id": "68f74df9-12e7-41f2-8f9b-38ffa8ede0d6",
+      "name": "Fetch Metrics (Clicks)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        680,
+        400
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "klaviyoApi",
+          "name": "Klaviyo API"
+        }
+      },
+      "notes": "Replace with your specific metric_id for clicks"
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "68cf8ddf-7c84-4809-b53b-0a22f0b87b2f",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and aggregate data from Klaviyo API responses\nconst dateRange = items[0]; // Contains date range information\nconst campaigns = items[1]; // Campaigns data\nconst opensData = items[2]; // Opens metrics\nconst clicksData = items[3]; // Clicks metrics\n\n// Initialize report data\nconst reportData = {\n  dateRange: {\n    start: dateRange.formattedStartDate,\n    end: dateRange.formattedEndDate\n  },\n  summary: {\n    totalCampaigns: campaigns.data ? campaigns.data.length : 0,\n    totalOpens: 0,\n    totalClicks: 0,\n    averageOpenRate: 0,\n    averageClickRate: 0\n  },\n  campaigns: []\n};\n\n// Process campaign data\nif (campaigns.data && Array.isArray(campaigns.data)) {\n  // Extract relevant campaign info and calculate metrics\n  campaigns.data.forEach(campaign => {\n    // For each campaign, find corresponding opens and clicks\n    const campaignStats = {\n      name: campaign.name || 'Unnamed Campaign',\n      id: campaign.id,\n      subject: campaign.subject_line || 'No Subject',\n      sendTime: campaign.send_time || 'Unknown',\n      recipients: campaign.num_recipients || 0,\n      opens: 0,\n      clicks: 0,\n      openRate: 0,\n      clickRate: 0\n    };\n    \n    // Process opens data\n    if (opensData.data && Array.isArray(opensData.data)) {\n      // Filter opens related to this campaign\n      const campaignOpens = opensData.data.filter(open => {\n        return open.campaign && open.campaign.id === campaign.id;\n      });\n      \n      campaignStats.opens = campaignOpens.length;\n      if (campaignStats.recipients > 0) {\n        campaignStats.openRate = (campaignStats.opens / campaignStats.recipients) * 100;\n      }\n      \n      // Add to total opens\n      reportData.summary.totalOpens += campaignStats.opens;\n    }\n    \n    // Process clicks data\n    if (clicksData.data && Array.isArray(clicksData.data)) {\n      // Filter clicks related to this campaign\n      const campaignClicks = clicksData.data.filter(click => {\n        return click.campaign && click.campaign.id === campaign.id;\n      });\n      \n      campaignStats.clicks = campaignClicks.length;\n      if (campaignStats.recipients > 0) {\n        campaignStats.clickRate = (campaignStats.clicks / campaignStats.recipients) * 100;\n      }\n      \n      // Add to total clicks\n      reportData.summary.totalClicks += campaignStats.clicks;\n    }\n    \n    // Add campaign stats to report\n    reportData.campaigns.push(campaignStats);\n  });\n  \n  // Calculate average rates\n  const totalRecipients = reportData.campaigns.reduce((sum, campaign) => sum + campaign.recipients, 0);\n  if (totalRecipients > 0) {\n    reportData.summary.averageOpenRate = (reportData.summary.totalOpens / totalRecipients) * 100;\n    reportData.summary.averageClickRate = (reportData.summary.totalClicks / totalRecipients) * 100;\n  }\n}\n\n// Format HTML for email report\nconst generateHtmlReport = () => {\n  const formatPercent = (value) => `${value.toFixed(2)}%`;\n  \n  // Create HTML\n  let html = `\n    <h1>Klaviyo Campaign Report</h1>\n    <h2>Period: ${reportData.dateRange.start} to ${reportData.dateRange.end}</h2>\n    \n    <h3>Summary</h3>\n    <table border=\"1\" cellpadding=\"5\" cellspacing=\"0\">\n      <tr>\n        <th>Metric</th>\n        <th>Value</th>\n      </tr>\n      <tr>\n        <td>Total Campaigns</td>\n        <td>${reportData.summary.totalCampaigns}</td>\n      </tr>\n      <tr>\n        <td>Total Opens</td>\n        <td>${reportData.summary.totalOpens}</td>\n      </tr>\n      <tr>\n        <td>Total Clicks</td>\n        <td>${reportData.summary.totalClicks}</td>\n      </tr>\n      <tr>\n        <td>Average Open Rate</td>\n        <td>${formatPercent(reportData.summary.averageOpenRate)}</td>\n      </tr>\n      <tr>\n        <td>Average Click Rate</td>\n        <td>${formatPercent(reportData.summary.averageClickRate)}</td>\n      </tr>\n    </table>\n    \n    <h3>Campaign Details</h3>\n    <table border=\"1\" cellpadding=\"5\" cellspacing=\"0\">\n      <tr>\n        <th>Campaign</th>\n        <th>Subject</th>\n        <th>Recipients</th>\n        <th>Opens</th>\n        <th>Open Rate</th>\n        <th>Clicks</th>\n        <th>Click Rate</th>\n      </tr>\n  `;\n  \n  // Add campaign rows\n  reportData.campaigns.forEach(campaign => {\n    html += `\n      <tr>\n        <td>${campaign.name}</td>\n        <td>${campaign.subject}</td>\n        <td>${campaign.recipients}</td>\n        <td>${campaign.opens}</td>\n        <td>${formatPercent(campaign.openRate)}</td>\n        <td>${campaign.clicks}</td>\n        <td>${formatPercent(campaign.clickRate)}</td>\n      </tr>\n    `;\n  });\n  \n  html += `\n    </table>\n    <p>Report generated automatically on ${new Date().toLocaleString()}</p>\n  `;\n  \n  return html;\n};\n\n// Return both raw data and formatted report\nreturn [{\n  json: reportData,\n  htmlReport: generateHtmlReport(),\n  reportTitle: dateRange.reportTitle\n}];"
+      },
+      "id": "d2d8e342-8af8-46f1-8c81-1b5a3fdcc1d5",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@yourdomain.com",
+        "toEmail": "recipient@yourdomain.com",
+        "subject": "={{ $json.reportTitle }}",
+        "html": "={{ $json.htmlReport }}"
+      },
+      "id": "36ed7f68-f4a1-43c2-9f86-9775e2e7cb19",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "39d20c8f-f6bd-4c2c-bf2c-d00a1d8e28a0",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        480
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Campaigns",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Metrics (Opens)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Metrics (Clicks)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Metrics (Opens)": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Metrics (Clicks)": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Results": {
+      "main": [
+        [
+          {
+            "node": "Process Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": ["Klaviyo", "Reporting", "Email"],
+  "staticData": null,
+  "versionId": "1.0",
+  "meta": {
+    "instanceId": "b888bd4553d9c4f4496557b4cfdcf6a52bdd9eb3b65db273fd33547d"
+  }
+}
